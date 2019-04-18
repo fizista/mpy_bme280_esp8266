@@ -213,8 +213,23 @@ class BME280:
 
     @property
     def values(self):
-        """Print human readable values"""
+        """
+        Returns normalized values
+
+        Return:
+            tuple(
+                <temperature in degrees Celsius [C]>,
+                <the pressure in the hectopascals [hPa]>,
+                <relative humidity in percentage> [%]>
+                <estimated altitude above sea level in metres> [m]
+            )
+        """
         t, p, h, a = self.scaledvalues
+        return (t, p, h, a)
+
+    def print_values(self):
+        """Print human readable values"""
+        t, p, h, a = self.values
         return ("{}C".format(t),
                 "{:.02f}hPa".format(p),
                 "{:.02f}%".format(h),
