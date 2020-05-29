@@ -1,4 +1,4 @@
-# Authors: Paul Cunnane 2016, Peter Dahlebrg 2016
+# Authors: Paul Cunnane 2016, Peter Dahlebrg 2016, Wojciech Banaś 2019-2020
 #
 # This module borrows from the Adafruit BME280 Python library. Original
 # Copyright notices are reproduced below.
@@ -48,6 +48,7 @@ BME280_OSAMPLE_8 = const(4)
 BME280_OSAMPLE_16 = const(5)
 
 BME280_REGISTER_CONTROL_HUM = const(0xF2)
+BME280_REGISTER_STATUS = const(0xF3)
 BME280_REGISTER_CONTROL = const(0xF4)
 
 
@@ -80,9 +81,9 @@ class BME280:
         dig_88_a1 = i2c.readfrom_mem(self.address, 0x88, 26)
         dig_e1_e7 = i2c.readfrom_mem(self.address, 0xE1, 7)
         self.dig_T1, self.dig_T2, self.dig_T3, self.dig_P1, \
-            self.dig_P2, self.dig_P3, self.dig_P4, self.dig_P5, \
-            self.dig_P6, self.dig_P7, self.dig_P8, self.dig_P9, \
-            _, self.dig_H1 = unpack("<HhhHhhhhhhhhBB", dig_88_a1)
+        self.dig_P2, self.dig_P3, self.dig_P4, self.dig_P5, \
+        self.dig_P6, self.dig_P7, self.dig_P8, self.dig_P9, \
+        _, self.dig_H1 = unpack("<HhhHhhhhhhhhBB", dig_88_a1)
 
         self.dig_H2, self.dig_H3 = unpack("<hB", dig_e1_e7)
         e4_sign = unpack_from("<b", dig_e1_e7, 3)[0]
@@ -94,7 +95,7 @@ class BME280:
         self.dig_H6 = unpack_from("<b", dig_e1_e7, 6)[0]
 
         i2c.writeto_mem(self.address, BME280_REGISTER_CONTROL,
-                             bytearray([0x3F]))
+                        bytearray([0x3F]))
         self.t_fine = 0
 
         # temporary data holders which stay allocated
@@ -106,12 +107,9 @@ class BME280:
         # easy to get from your local airport METAR
         self._slp = 1013.25
 
-    def read_raw_data(self, result):
-        """ Reads the raw (uncompensated) data from the sensor.
+    def ask_data(self):
+        """ Ask the raw (uncompensated) data from the sensor.
 
-            Args:
-                result: array of length 3 or alike where the result will be
-                stored, in temperature, pressure, humidity order
             Returns:
                 None
         """
@@ -123,11 +121,25 @@ class BME280:
         self.i2c.writeto_mem(self.address, BME280_REGISTER_CONTROL,
                              self._l1_barray)
 
-        sleep_time = 1250 + 2300 * (1 << self._mode)
-        sleep_time = sleep_time + 2300 * (1 << self._mode) + 575
-        sleep_time = sleep_time + 2300 * (1 << self._mode) + 575
-        time.sleep_us(sleep_time)  # Wait the required time
+    def is_raw_data_ready(self):
+        """
+        Information on whether the measurement has finished and data can be received.
+            Returns:
+                bool
+        """
+        return not self.i2c.readfrom_mem(self.address, BME280_REGISTER_STATUS, 1)[0] & 0x08
 
+    def read_raw_data(self, result):
+        """ Reads the raw (uncompensated) data from the sensor if the data has been prepared.
+
+            Args:
+                result: array of length 3 or alike where the result will be
+                stored, in temperature, pressure, humidity order
+            Returns:
+                None
+        """
+        if not self.is_raw_data_ready():
+            return
         # burst readout from 0xF7 to 0xFE, recommended by datasheet
         self.i2c.readfrom_mem_into(self.address, 0xF7, self._l8_barray)
         readout = self._l8_barray
@@ -143,7 +155,10 @@ class BME280:
         result[2] = raw_hum
 
     def read_compensated_data(self, result=None):
-        """ Reads the data from the sensor and returns the compensated data.
+        """ Returns the compensated data.
+
+            Reads the data from the sensor if the data has been prepared.
+            Otherwise, the last measured value is returned.
 
             Args:
                 result: array of length 3 or alike where the result will be
@@ -201,17 +216,6 @@ class BME280:
         return array("i", (temp, pressure, humidity))
 
     @property
-    def scaledvalues(self):
-        """Scale raw sensor values to real world units"""
-        t, p, h = self.read_compensated_data()
-
-        t /= 100
-        p /= 25600
-        h /= 1024
-        a = 44330 * (1 - (p/self._slp)**0.190295)
-        return t, p, h, a
-
-    @property
     def values(self):
         """
         Returns normalized values
@@ -224,8 +228,13 @@ class BME280:
                 <estimated altitude above sea level in metres> [m]
             )
         """
-        t, p, h, a = self.scaledvalues
-        return (t, p, h, a)
+        t, p, h = self.read_compensated_data()
+
+        t /= 100
+        p /= 25600
+        h /= 1024
+        a = 44330 * (1 - (p / self._slp) ** 0.190295)
+        return t, p, h, a
 
     def print_values(self):
         """Print human readable values"""
@@ -234,7 +243,7 @@ class BME280:
                 "{:.02f}hPa".format(p),
                 "{:.02f}%".format(h),
                 "{:.02f}m".format(a),
-               )
+                )
 
     @property
     def sea_level_millibars(self):

@@ -1,6 +1,10 @@
 # README #
 
-This is a driver for the Bosch BME280 temperature/pressure/humidity sensor, for use with MicroPython on ESP8266 boards. It is also compatible with the BMP280 which provides the same interface but temperature + pressure only.
+This is a driver for the Bosch BME280 temperature/pressure/humidity sensor, for use with 
+MicroPython on ESP8266 and ESP32 boards. It is also compatible with the BMP280 which provides 
+the same interface but temperature + pressure only.
+
+You can use this library in asynchronous mode.
 
 ### About the BME280 ###
 
@@ -22,6 +26,11 @@ bme = bme280.BME280(i2c)
 # optional, check your local METAR for the current value
 bme.sea_level_millibars = 1013.10
 
+bme.ask_data()
+while not bme.is_raw_data_ready():
+    pass
+else:
+    print('Data ready for download from the sensor.')
 print(bme.values)
 ```
 
